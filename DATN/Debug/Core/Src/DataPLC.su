@@ -1,0 +1,11 @@
+../Core/Src/DataPLC.c:30:5:bufsize	24	static
+../Core/Src/DataPLC.c:37:6:clear_buffer	16	static
+../Core/Src/DataPLC.c:42:6:send_uart	24	static
+../Core/Src/DataPLC.c:50:6:read_Pin_Input	8	static
+../Core/Src/DataPLC.c:54:6:write_Pin_Output	8	static
+../Core/Src/DataPLC.c:81:6:Main_task	40	static
+../Core/Src/DataPLC.c:303:6:TimerCallBack	24	static
+../Core/Src/DataPLC.c:314:6:initTimer	16	static
+../Core/Src/DataPLC.c:320:6:Start_task	16	static
+../Core/Src/DataPLC.c:324:6:Send_task	16	static
+../Core/Src/DataPLC.c:328:6:Setting_task	16	static

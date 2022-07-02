@@ -1,0 +1,6 @@
+../Core/Src/rtc.c:13:9:RTC_decToBcd	16	static
+../Core/Src/rtc.c:19:5:RTC_bcdToDec	16	static
+../Core/Src/rtc.c:25:6:RTC_Set_Time	40	static
+../Core/Src/rtc.c:40:6:RTC_Get_Time	40	static
+../Core/Src/rtc.c:54:6:show_time_date	40	static
+../Core/Src/rtc.c:66:5:validate_rtc_information	16	static
