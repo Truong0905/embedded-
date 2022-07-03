@@ -53,12 +53,12 @@ void RTC_Get_Time (RTC_TIME *time)
 
 void show_time_date(RTC_TIME *time)
 {
-	//static char buffer[60];
-	// static char *rtc_time = buffer ;
+	static char buffer[60];
+	 static char *rtc_time = buffer ;
 //	memset(&rtc_time,0,sizeof(rtc_time)) ;
 	RTC_Get_Time(time) ;
-	// sprintf ((char *)buffer, "Time&Date :  %02d:%02d:%02d     %02d-%02d-20%02d \n",  time->hour, time->minutes, time->seconds ,time->dayofmonth, time->month, time->year);
-	// xQueueSend(q_printf,&rtc_time,portMAX_DELAY) ;
+	 sprintf ((char *)buffer, "Time&Date :  %02d:%02d:%02d     %02d-%02d-20%02d \n",  time->hour, time->minutes, time->seconds ,time->dayofmonth, time->month, time->year);
+	 HAL_UART_Transmit(&huart3,(uint8_t*)rtc_time, strlen(rtc_time), HAL_MAX_DELAY);
 
 }
 

@@ -332,31 +332,260 @@ void initTimer(void)
 	handle_timerPLC[0] = xTimerCreate("timerTONT37", pdMS_TO_TICKS(100), pdTRUE, (void *)(0 + 1), TimerCallBack);
 }
 
+const char *msg_menu =  "====================\n"
+		  	  	  	  	"|     MENU           |\n "
+		   	   	  	  	"====================\n"
+							"Run	--> 0\n"
+							"Setting  --> 1 \n"
+						"Enter  your choice here : " ;
+const char *msg_inv = "///// Invalid option ???? ///// \n" ;
+
+#define MENU_MESS HAL_UART_Transmit(&huart3,(uint8_t*)msg_menu, strlen(msg_menu), HAL_MAX_DELAY)
+#define INVALID_MESS HAL_UART_Transmit(&huart3,(uint8_t*)msg_inv, strlen(msg_inv), HAL_MAX_DELAY)
+
 
 void Start_task ( void *param)
 {
-	;
+	BaseType_t status ;
+	while(1)
+	{
+		status = xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		if (status != pdTRUE) continue ;
+		curr_state = sNone ;
+
+	}
 }
 void Send_task ( void *param)
 {
-	;
+	while(1)
+	{
+		if (curr_state != sNone)
+		{
+			 xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+			continue ;
+		}
+	}
 }
 void Setting_task( void *param)
 {
-;
+	const char* msg_rtc1 = "========================\n"
+							"|         Setting     |\n"
+							"========================\n";
+
+	const char* msg_rtc2 = "Configure Time            ----> 0\n"
+							"Configure Date            ----> 1\n"
+							"Exit                      ----> 2\n"
+							"Enter your choice here : ";
+
+
+	const char *msg_rtc_hh = "Enter hour(1-24):";
+	const char *msg_rtc_mm = "Enter minutes(0-59):";
+	const char *msg_rtc_ss = "Enter seconds(0-59):";
+
+	const char *msg_rtc_dd  = "Enter date(1-31):";
+	const char *msg_rtc_mo  ="Enter month(1-12):";
+	const char *msg_rtc_dow  = "Enter day(1-7 sun:1):";
+	const char *msg_rtc_yr  = "Enter year(0-99):";
+
+	const char *msg_conf = "Configuration successful\n";
+
+	uint32_t cmd_addr;
+	command_t *cmd;
+	int menu_code ;
+	static int rtc_state = 0 ;
+	 RTC_TIME time ;
+
+#define HH_CONFIG	0
+#define MM_CONFIG	1
+#define SS_CONFIG	2
+
+#define DATE_CONFIG		0
+#define MONTH_CONFIG	1
+#define DAY_CONFIG		2
+#define YEAR_CONFIG		3
+BaseType_t status ;
+	while(1)
+	{
+			status = xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+			if (status != pdTRUE) continue ;
+			HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc1, strlen(msg_rtc1), HAL_MAX_DELAY);
+			show_time_date(&time);
+			HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+
+		while(curr_state != sMenu )
+		{
+
+			xTaskNotifyWait(0,0,&cmd_addr,portMAX_DELAY);
+			cmd = (command_t *)cmd_addr ;
+			switch(curr_state)
+			{
+				case sSetting:
+					{
+						/*process RTC menu commands */
+						if (cmd->len == 1)
+						{
+							menu_code = cmd->payload[0]-48 ;
+							switch(menu_code)
+							{
+							case 0:
+								curr_state = sRtcTimeConfig ;
+								//xQueueSend(q_printf,&msg_rtc_hh,portMAX_DELAY) ;
+								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_hh, strlen(msg_rtc_hh), HAL_MAX_DELAY);
+								break ;
+							case 1:
+								curr_state = sRtcDateConfig ;
+								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_dd, strlen(msg_rtc_dd), HAL_MAX_DELAY);
+								break ;
+							case 2:
+								curr_state = sMenu;
+								MENU_MESS ;
+								break ;
+							default:
+								INVALID_MESS ;
+								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+							}
+						}
+						else
+						{
+							INVALID_MESS ;
+							HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+						}
+
+						break;
+					}
+
+				case sRtcTimeConfig:
+					{
+					/* get hh, mm, ss infor and configure RTC */
+						switch(rtc_state)
+						{
+						case HH_CONFIG:
+							{
+								uint8_t hour = get_number(cmd->payload, cmd->len) ;
+								time.hour = hour ;
+								rtc_state = MM_CONFIG ;
+								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_mm, strlen(msg_rtc_mm), HAL_MAX_DELAY);
+								break;
+							}
+						case MM_CONFIG:
+							{
+								uint8_t min = get_number(cmd->payload, cmd->len) ;
+								time.minutes = min ;
+								rtc_state = SS_CONFIG ;
+								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_ss, strlen(msg_rtc_ss), HAL_MAX_DELAY);
+								break;
+							}
+
+						case SS_CONFIG:
+							{
+								uint8_t sec = get_number(cmd->payload, cmd->len) ;
+								time.seconds = sec ;
+								if (!validate_rtc_information(&time))
+								{
+									RTC_Set_Time(&time) ;
+									HAL_UART_Transmit(&huart3,(uint8_t*)msg_conf, strlen(msg_conf), HAL_MAX_DELAY);
+									show_time_date(&time);
+									curr_state = sMenu ;
+									MENU_MESS ;
+
+								}
+								else
+								{
+									INVALID_MESS ;
+									curr_state = sSetting ;
+									HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+								}
+								rtc_state = 0 ;
+								break ;
+
+							}
+						} // switch(rtc_state)
+
+					break;} // case sRtcTimeConfig:
+
+				case sRtcDateConfig:
+						{
+
+							/* get date, month, day , year info and configure RTC */
+							switch(rtc_state)
+								{
+								case DATE_CONFIG:
+									{
+										uint8_t d = get_number(cmd->payload, cmd->len) ;
+										time.dayofmonth = d ;
+										rtc_state = MONTH_CONFIG ;
+										HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_mo, strlen(msg_rtc_mo), HAL_MAX_DELAY);
+										break;
+									}
+								case MONTH_CONFIG:
+									{
+										uint8_t month = get_number(cmd->payload, cmd->len) ;
+										time.month = month ;
+										rtc_state = DAY_CONFIG ;
+										HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_dow, strlen(msg_rtc_dow), HAL_MAX_DELAY);
+										break;
+									}
+								case DAY_CONFIG:
+								{
+									uint8_t day = get_number(cmd->payload, cmd->len) ;
+									time.dayofweek = day ;
+									rtc_state = YEAR_CONFIG ;
+									HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_yr, strlen(msg_rtc_yr), HAL_MAX_DELAY);
+									break;
+								}
+
+								case YEAR_CONFIG:
+									{
+										uint8_t year = get_number(cmd->payload, cmd->len) ;
+										time.year = year ;
+										if (!validate_rtc_information(&time))
+										{
+											RTC_Set_Time(&time) ;
+											HAL_UART_Transmit(&huart3,(uint8_t*)msg_conf, strlen(msg_conf), HAL_MAX_DELAY);
+											show_time_date(&time);
+											curr_state = sMenu ;
+											MENU_MESS ;
+
+										}
+										else
+										{
+											INVALID_MESS ;
+											curr_state = sSetting ;
+											HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+										}
+										rtc_state = 0 ;
+										break ;
+
+									}
+								}
+							break;
+						}
+
+
+			}// switch end
+
+		} //while end
+
+		}//while super loop end
 }
 void Command_task( void *param)
 {
-	BaseType_t ret ;
+
+	BaseType_t status ;
 	command_t cmd ;
+	MENU_MESS ;
 	while(1)
 	{
 			/* Implement notify wait */
-		ret = xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		status = xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
 
-		if (ret == pdTRUE)
+		if (status == pdTRUE)
 		{
 			/* process the user data ( command) stored  in input data  queue */
+			if (curr_state == sNone)
+			{
+				curr_state = sMenu ;
+			}
 			process_command(&cmd) ;
 		}
 
@@ -368,19 +597,31 @@ void process_command ( command_t *cmd)
 {
 	extract_command(cmd);
 
-	switch (curr_state )
+	if (curr_state != sNone)
 	{
-	case sNone:
-		break;
-	case sSetting:
-			xTaskNotify(handle_setting_task,(uint32_t)cmd ,eSetValueWithOverwrite) ;
-			break ;
-	case sRunToStart:
-	case sRunToRestart:
-	case sRun:
-			xTaskNotify(handle_start_task,(uint32_t)cmd ,eSetValueWithOverwrite) ;
-			break ;
+		if (curr_state == sMenu)
+		checkState(cmd);
+		switch (curr_state )
+		{
+
+		case sRtcDateConfig:
+		case sRtcTimeConfig:
+		case sSetting:
+				xTaskNotify(handle_setting_task,(uint32_t)cmd ,eSetValueWithOverwrite) ;
+				break ;
+		case sRunToStart:
+		case sRunToRestart:
+		case sRun:
+				xTaskNotify(handle_start_task,(uint32_t)cmd ,eSetValueWithOverwrite) ;
+				break ;
+		 default:
+			 INVALID_MESS ;
+			 MENU_MESS ;
+
+
+		}
 	}
+
 
 
 }

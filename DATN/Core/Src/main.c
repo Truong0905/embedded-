@@ -72,7 +72,7 @@ QueueHandle_t q_data ;
 
 volatile uint8_t user_data ; // Data gửi vào UART
 
-state_t curr_state  = sNone ;
+state_t curr_state  = sMenu ;
 
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,7 +113,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-  status = xTaskCreate(Main_task, "menu_task", 50000,NULL,2, &handle_main_task) ;
+  status = xTaskCreate(Main_task, "menu_task", 10000,NULL,2, &handle_main_task) ;
   configASSERT(status == pdPASS) ;
   status = xTaskCreate(Start_task, "start_task", 500,NULL,2, &handle_start_task) ;
   configASSERT(status == pdPASS) ;
@@ -121,7 +121,7 @@ int main(void)
   configASSERT(status == pdPASS) ;
   status = xTaskCreate(Setting_task, "Setting_task", 500,NULL,2, &handle_setting_task) ;
   configASSERT(status == pdPASS) ;
-  status = xTaskCreate(Command_task, "Command_task", 500,NULL,2, &handle_command_task) ;
+  status = xTaskCreate(Command_task, "Command_task", 100,NULL,2, &handle_command_task) ;
    configASSERT(status == pdPASS) ;
 
   q_data = xQueueCreate(10,sizeof(char)) ;
