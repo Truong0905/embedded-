@@ -28,20 +28,18 @@ volatile static uint8_t C2 = 0;
 volatile static uint32_t countC2 = 0;
 
 FATFS fs;  // file system
-FIL fil; // File
+static FIL fil; // File
 FILINFO fno;
-FRESULT fresult;  // result
+static FRESULT fresult = 1;  // result
 UINT br, bw;  // File read/write count
 
 /**** capacity related *****/
 FATFS *pfs;
 DWORD fre_clust;
 uint32_t total, free_space;
-
-#define BUFFER_SIZE 128
-char buffer[BUFFER_SIZE];  // to store strings..
-
-int i=0;
+static uint8_t checkDay = 32 ;
+static uint8_t checkYear = 0 ;
+static char timeBuffer[20];
 
 int bufsize (char *buf)
 {
@@ -50,12 +48,12 @@ int bufsize (char *buf)
 	return i;
 }
 
-void clear_buffer (void)
+void clear_buffer (char *buffer , uint8_t len)
 {
-	for (int i=0; i<BUFFER_SIZE; i++) buffer[i] = '\0';
+	for (int i=0; i<len; i++) buffer[i] = '\0';
 }
 
-void send_uart (char *string)
+void send_uart (const char *string)
 {
 	uint8_t len = strlen (string);
 	HAL_UART_Transmit(&huart3, (uint8_t *) string, len, HAL_MAX_DELAY);  // transmit in blocking mode
@@ -339,31 +337,250 @@ const char *msg_menu =  "====================\n"
 							"Setting  --> 1 \n"
 						"Enter  your choice here : " ;
 const char *msg_inv = "///// Invalid option ???? ///// \n" ;
-
-#define MENU_MESS HAL_UART_Transmit(&huart3,(uint8_t*)msg_menu, strlen(msg_menu), HAL_MAX_DELAY)
-#define INVALID_MESS HAL_UART_Transmit(&huart3,(uint8_t*)msg_inv, strlen(msg_inv), HAL_MAX_DELAY)
-
+const char *msg_time_error = "Time error \n" ;
 
 void Start_task ( void *param)
 {
 	BaseType_t status ;
+	uint32_t cmd_addr;
+	command_t *cmd;
+	 RTC_TIME time ;
+	 const char *msg_start = "====================\n"
+	  	  	  				"|     	START         |\n "
+	   	  	  				"====================\n"
+							"Run only			--> 0\n"
+							"Run and save data  --> 1 \n"
+							"Exit  				-->2  \n"
+			 	 	 	 	"Enter  your choice here : " ;
 	while(1)
 	{
+
 		status = xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
 		if (status != pdTRUE) continue ;
-		curr_state = sNone ;
+		RTC_Get_Time(&time);
+		if (time.year == 0)
+		{
+			send_uart(msg_time_error);
+			send_uart(msg_menu);
+			curr_state = sMenu ;
+			checkYear = 0 ;
+			continue ;
+		}
+		send_uart(msg_start);
 
-	}
+		while(curr_state != sNone && curr_state != sRunAndSave && curr_state != sRunOnly )
+		{
+			xTaskNotifyWait(0,0,&cmd_addr,portMAX_DELAY);
+			cmd = (command_t *)cmd_addr ;
+			if (cmd->len == 1)
+			{
+				uint8_t menu_code = cmd->payload[0]-48 ;
+				switch(menu_code)
+				{
+				case 0:
+					curr_state = sRunOnly ;
+					break ;
+				case 1:
+					curr_state = sRunAndSave ;
+					break ;
+				case 2:
+					curr_state = sNone;
+					send_uart(msg_menu);
+					break ;
+				default:
+					send_uart(msg_inv);
+					send_uart(msg_start);
+				}
+			}
+			else
+			{
+				send_uart(msg_inv);
+				send_uart(msg_start);
+			}
+		} // while curr_state
+		if (curr_state == sNone)
+		{
+			continue ;
+		}
+		checkDay = time.dayofmonth ;
+		clear_buffer(timeBuffer, 20);
+		sprintf(timeBuffer,"%02d_%02d_%02ddata.txt",checkDay,time.month,time.year);
+
+		//------------------ KIEM TRA HOAT DONG -----------------//
+				fresult = f_mount(&fs, "/", 1);
+				if (fresult != FR_OK)
+				{
+					send_uart ("LOI !!! KIEM TRA LAI SD CARD...\n\n");
+					send_uart(msg_menu);
+					curr_state = sMenu ;
+					continue ;
+				}
+				else send_uart("KET NOI THANH CONG\n\n");
+		if (curr_state == sRunAndSave)
+		{
+			int tempCheckDay = checkDay-1;
+			char tempTimeBuffer[20];
+			if (checkDay ==1 && time.month ==1 )
+			{
+					tempCheckDay = 31 ;
+						while(tempCheckDay)
+						{
+							sprintf(tempTimeBuffer,"%02d_%02d_%02ddata.txt",tempCheckDay,12,time.year-1);
+							fresult = f_open(&fil,tempTimeBuffer, FA_READ);
+							if (fresult == FR_OK)
+								break ;
+							tempCheckDay -- ;
+						}
+
+
+			}
+			else if ( checkDay ==1 )
+			{
+				if (time.month ==3 )
+				{
+					if (! (time.year % 4))
+					{
+						tempCheckDay = 29 ;
+					}
+					else
+					{
+						tempCheckDay = 28 ;
+					}
+
+				}
+				if (time.month == 4 || time.month == 6 || time.month == 9 || time.month == 11)
+				{
+					tempCheckDay = 30 ;
+				}
+				else
+				{
+					tempCheckDay = 31 ;
+				}
+				while(tempCheckDay)
+				{
+					sprintf(tempTimeBuffer,"%02d_%02d_%02ddata.txt",tempCheckDay,time.month-1,time.year);
+					fresult = f_open(&fil,tempTimeBuffer, FA_READ);
+					if (fresult == FR_OK)
+						break ;
+					tempCheckDay -- ;
+				}
+
+			}
+			else
+			{
+				while(tempCheckDay)
+				{
+					sprintf(tempTimeBuffer,"%02d_%02d_%02ddata.txt",tempCheckDay,time.month,time.year);
+					fresult = f_open(&fil,tempTimeBuffer, FA_READ);
+					if (fresult == FR_OK)
+						break ;
+					tempCheckDay -- ;
+				}
+			}
+
+		}// if  (curr_state == sRunAndSave)
+		char buffer[50]={};
+		if (fresult == FR_OK)
+		{
+			while (f_gets(buffer, 50, &fil))
+				{
+					send_uart(buffer);
+					clear_buffer(buffer,50);
+				}
+			f_close(&fil);
+		}
+	// ------------------------ TAO FILE MOI -----------------------//
+		fresult = f_open(&fil,timeBuffer, FA_WRITE); // Nếu đã tạo thì không tạo nữa
+		if (fresult != FR_OK)
+		{
+			fresult = f_open(&fil,timeBuffer, FA_CREATE_ALWAYS | FA_WRITE);
+					if (fresult != FR_OK)
+					{
+						send_uart("Khong Tao duoc file\n");
+						curr_state =sRun ;
+						send_uart(msg_start);
+					}
+					else
+					{
+						send_uart("Tao file thanh cong\n");
+						curr_state = sNone ;
+						send_uart(msg_menu);
+						f_close(&fil);
+						xTaskNotify(handle_send_task,0,eNoAction);
+					}
+		}
+		else
+		{
+				send_uart("File da duoc tao\n");
+				curr_state = sNone ;
+				send_uart(msg_menu);
+				f_close(&fil);
+				xTaskNotify(handle_send_task,0,eNoAction);
+
+		}
+
+
+
+	}// big while
 }
 void Send_task ( void *param)
 {
+	static uint8_t checkQ0_0 = 1;
+	static uint8_t checkQ0_1 = 1;
+	static uint8_t checkQ0_2 = 1;
+	static char Buffer[50] ;
+	clear_buffer(Buffer, 50) ;
+	RTC_TIME time ;
 	while(1)
 	{
-		if (curr_state != sNone)
+		if (curr_state == sRunAndSave || curr_state == sRtcDateConfig || curr_state == sRtcTimeConfig )
 		{
 			 xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
 			continue ;
 		}
+		fresult = f_open(&fil,timeBuffer, FA_WRITE);
+		fresult = f_lseek(&fil, f_size(&fil));
+		if (fresult == FR_OK)
+		{
+			if (Q0_0 ==1 && checkQ0_0 ==1)
+			{
+				checkQ0_0 = 0 ;
+				RTC_Get_Time(&time);
+				sprintf(Buffer,"%02d-%02d-%02d :Xanh\n",time.hour,time.minutes,time.seconds);
+				 f_puts(Buffer, &fil);
+
+			}
+			else if (Q0_0 == 0)
+			{
+				checkQ0_0 = 1 ;
+			}
+
+			if (Q0_1 ==1 && checkQ0_1 ==1)
+			{
+					checkQ0_1 = 0 ;
+					RTC_Get_Time(&time);
+					sprintf(Buffer,"%02d-%02d-%02d :Do\n",time.hour,time.minutes,time.seconds);
+					f_puts(Buffer, &fil);
+			}
+			else if ( Q0_1 == 0 )
+			{
+				checkQ0_1 = 1 ;
+			}
+
+			if (Q0_2 ==1 && checkQ0_2 ==1)
+			{
+					checkQ0_2 = 0 ;
+					RTC_Get_Time(&time);
+					sprintf(Buffer,"%02d-%02d-%02d :Vang\n",time.hour,time.minutes,time.seconds);
+					f_puts(Buffer, &fil);
+			}
+			else if (Q0_2 == 0)
+			{
+					checkQ0_2 = 1 ;
+			}
+			f_close(&fil);
+		}
+		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
 }
 void Setting_task( void *param)
@@ -408,9 +625,11 @@ BaseType_t status ;
 	{
 			status = xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
 			if (status != pdTRUE) continue ;
-			HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc1, strlen(msg_rtc1), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc1, strlen(msg_rtc1), HAL_MAX_DELAY);
+			send_uart(msg_rtc1);
 			show_time_date(&time);
-			HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+			//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+			send_uart(msg_rtc2);
 
 		while(curr_state != sMenu )
 		{
@@ -430,25 +649,29 @@ BaseType_t status ;
 							case 0:
 								curr_state = sRtcTimeConfig ;
 								//xQueueSend(q_printf,&msg_rtc_hh,portMAX_DELAY) ;
-								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_hh, strlen(msg_rtc_hh), HAL_MAX_DELAY);
+								//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_hh, strlen(msg_rtc_hh), HAL_MAX_DELAY);
+								send_uart(msg_rtc_hh);
 								break ;
 							case 1:
 								curr_state = sRtcDateConfig ;
-								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_dd, strlen(msg_rtc_dd), HAL_MAX_DELAY);
+								//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_dd, strlen(msg_rtc_dd), HAL_MAX_DELAY);
+								send_uart(msg_rtc_dd);
 								break ;
 							case 2:
 								curr_state = sMenu;
-								MENU_MESS ;
+								send_uart(msg_menu);
 								break ;
 							default:
-								INVALID_MESS ;
-								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+								send_uart(msg_inv);
+								//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+								send_uart(msg_rtc2);
 							}
 						}
 						else
 						{
-							INVALID_MESS ;
-							HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+							send_uart(msg_inv);
+							//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+							send_uart(msg_rtc2);
 						}
 
 						break;
@@ -464,7 +687,8 @@ BaseType_t status ;
 								uint8_t hour = get_number(cmd->payload, cmd->len) ;
 								time.hour = hour ;
 								rtc_state = MM_CONFIG ;
-								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_mm, strlen(msg_rtc_mm), HAL_MAX_DELAY);
+								//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_mm, strlen(msg_rtc_mm), HAL_MAX_DELAY);
+								send_uart(msg_rtc_mm);
 								break;
 							}
 						case MM_CONFIG:
@@ -472,7 +696,8 @@ BaseType_t status ;
 								uint8_t min = get_number(cmd->payload, cmd->len) ;
 								time.minutes = min ;
 								rtc_state = SS_CONFIG ;
-								HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_ss, strlen(msg_rtc_ss), HAL_MAX_DELAY);
+								//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_ss, strlen(msg_rtc_ss), HAL_MAX_DELAY);
+								send_uart(msg_rtc_ss);
 								break;
 							}
 
@@ -483,17 +708,18 @@ BaseType_t status ;
 								if (!validate_rtc_information(&time))
 								{
 									RTC_Set_Time(&time) ;
-									HAL_UART_Transmit(&huart3,(uint8_t*)msg_conf, strlen(msg_conf), HAL_MAX_DELAY);
+									//HAL_UART_Transmit(&huart3,(uint8_t*)msg_conf, strlen(msg_conf), HAL_MAX_DELAY);
+									send_uart(msg_conf);
 									show_time_date(&time);
 									curr_state = sMenu ;
-									MENU_MESS ;
-
+									send_uart(msg_menu);
 								}
 								else
 								{
-									INVALID_MESS ;
+									send_uart(msg_inv);
 									curr_state = sSetting ;
-									HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+									//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+									send_uart(msg_rtc2);
 								}
 								rtc_state = 0 ;
 								break ;
@@ -514,7 +740,8 @@ BaseType_t status ;
 										uint8_t d = get_number(cmd->payload, cmd->len) ;
 										time.dayofmonth = d ;
 										rtc_state = MONTH_CONFIG ;
-										HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_mo, strlen(msg_rtc_mo), HAL_MAX_DELAY);
+										//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_mo, strlen(msg_rtc_mo), HAL_MAX_DELAY);
+										send_uart(msg_rtc_mo);
 										break;
 									}
 								case MONTH_CONFIG:
@@ -522,7 +749,8 @@ BaseType_t status ;
 										uint8_t month = get_number(cmd->payload, cmd->len) ;
 										time.month = month ;
 										rtc_state = DAY_CONFIG ;
-										HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_dow, strlen(msg_rtc_dow), HAL_MAX_DELAY);
+										//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_dow, strlen(msg_rtc_dow), HAL_MAX_DELAY);
+										send_uart(msg_rtc_dow);
 										break;
 									}
 								case DAY_CONFIG:
@@ -530,7 +758,8 @@ BaseType_t status ;
 									uint8_t day = get_number(cmd->payload, cmd->len) ;
 									time.dayofweek = day ;
 									rtc_state = YEAR_CONFIG ;
-									HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_yr, strlen(msg_rtc_yr), HAL_MAX_DELAY);
+								//	HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc_yr, strlen(msg_rtc_yr), HAL_MAX_DELAY);
+									send_uart(msg_rtc_yr);
 									break;
 								}
 
@@ -541,17 +770,18 @@ BaseType_t status ;
 										if (!validate_rtc_information(&time))
 										{
 											RTC_Set_Time(&time) ;
-											HAL_UART_Transmit(&huart3,(uint8_t*)msg_conf, strlen(msg_conf), HAL_MAX_DELAY);
+										//	HAL_UART_Transmit(&huart3,(uint8_t*)msg_conf, strlen(msg_conf), HAL_MAX_DELAY);
+											send_uart(msg_conf);
 											show_time_date(&time);
 											curr_state = sMenu ;
-											MENU_MESS ;
-
+											send_uart(msg_menu);
 										}
 										else
 										{
-											INVALID_MESS ;
+											 send_uart(msg_inv);
 											curr_state = sSetting ;
-											HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+											//HAL_UART_Transmit(&huart3,(uint8_t*)msg_rtc2, strlen(msg_rtc2), HAL_MAX_DELAY);
+											send_uart(msg_rtc2);
 										}
 										rtc_state = 0 ;
 										break ;
@@ -573,7 +803,7 @@ void Command_task( void *param)
 
 	BaseType_t status ;
 	command_t cmd ;
-	MENU_MESS ;
+	send_uart(msg_menu);
 	while(1)
 	{
 			/* Implement notify wait */
@@ -609,15 +839,14 @@ void process_command ( command_t *cmd)
 		case sSetting:
 				xTaskNotify(handle_setting_task,(uint32_t)cmd ,eSetValueWithOverwrite) ;
 				break ;
-		case sRunToStart:
-		case sRunToRestart:
+		case sRunOnly:
+		case sRunAndSave:
 		case sRun:
 				xTaskNotify(handle_start_task,(uint32_t)cmd ,eSetValueWithOverwrite) ;
 				break ;
 		 default:
-			 INVALID_MESS ;
-			 MENU_MESS ;
-
+			 send_uart(msg_inv);
+			 send_uart(msg_menu);
 
 		}
 	}

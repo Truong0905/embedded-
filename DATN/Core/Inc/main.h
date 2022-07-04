@@ -64,11 +64,11 @@ typedef struct
 typedef enum
 {
 	sSetting = 0 ,
-	sRunToRestart,
 	sRtcTimeConfig,
 	sRtcDateConfig,
 	sRun,
-	sRunToStart,
+	sRunOnly,
+	sRunAndSave,
 	sMenu,
 	sNone,
 }state_t;
